@@ -86,6 +86,7 @@ app.put("/pedido/:id/cerrar", async (req, res) => {
   res.json({ message: "Pedido cerrado" });
 });
 
-app.listen(process.env.PORT, () => {
+app.listen(process.env.PORT || 3000, () => {
   console.log("Servidor corriendo 🚀");
 });
+
