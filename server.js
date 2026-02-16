@@ -92,6 +92,71 @@ app.post("/crear-admin", async (req, res) => {
   }
 });
 
+// ====== LOGIN ======
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const userResult = await pool.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: "Usuario no encontrado" });
+    }
+
+    const user = userResult.rows[0];
+
+    const validPassword = await bcrypt.compare(password, user.password);
+
+    if (!validPassword) {
+      return res.status(401).json({ error: "Password incorrecto" });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, rol: user.rol },
+      process.env.JWT_SECRET,
+      { expiresIn: "8h" }
+    );
+
+    res.json({
+      token,
+      rol: user.rol,
+      nombre: user.nombre
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Error en login" });
+  }
+});
+
+function verificarToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) return res.status(401).json({ error: "Token requerido" });
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(403).json({ error: "Token inválido" });
+  }
+}
+
+function verificarRol(rol) {
+  return (req, res, next) => {
+    if (req.user.rol !== rol) {
+      return res.status(403).json({ error: "Acceso denegado" });
+    }
+    next();
+  };
+}
+
+
 // ====== INICIAR SERVIDOR ======
 const PORT = process.env.PORT || 3000;
 
