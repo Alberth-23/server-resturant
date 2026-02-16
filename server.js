@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const app = express();
@@ -69,6 +71,24 @@ app.post("/pedido", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error creando pedido" });
+  }
+});
+
+// ====== REGISTRO TEMPORAL ======
+app.post("/crear-admin", async (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  try {
+    await pool.query(
+      "INSERT INTO usuarios (nombre, email, password, rol) VALUES ($1,$2,$3,$4)",
+      [nombre, email, hashedPassword, rol]
+    );
+
+    res.json({ mensaje: "Usuario creado" });
+  } catch (error) {
+    res.status(500).json({ error: "Error creando usuario" });
   }
 });
 
