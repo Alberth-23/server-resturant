@@ -41,6 +41,20 @@ app.get("/productos", async (req, res) => {
   }
 });
 
+app.get("/pedidos", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM pedidos WHERE estado = 'pendiente' ORDER BY id ASC"
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error obteniendo pedidos:", error);
+    res.status(500).json({ error: "Error al obtener pedidos" });
+  }
+});
+
+
 // ===============================
 // LOGIN (SIN BCRYPT)
 // ===============================
