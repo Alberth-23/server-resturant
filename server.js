@@ -22,8 +22,9 @@ const pool = new Pool({
 // RUTA TEST
 // ===============================
 app.get("/", (req, res) => {
-  res.send("Servidor funcionando 🔥 VERSION ACTUALIZADA");
+  res.send("Servidor funcionando 🔥 VERSION FINAL");
 });
+
 // ===============================
 // OBTENER PRODUCTOS
 // ===============================
@@ -32,70 +33,10 @@ app.get("/productos", async (req, res) => {
     const result = await pool.query(
       "SELECT id, nombre, precio FROM productos WHERE activo = true ORDER BY id ASC"
     );
-
     res.json(result.rows);
-
   } catch (error) {
     console.error("Error obteniendo productos:", error);
     res.status(500).json({ error: "Error obteniendo productos" });
-  }
-});
-
-app.get("/pedidos", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT * FROM pedidos WHERE estado = 'pendiente' ORDER BY id ASC"
-    );
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Error obteniendo pedidos:", error);
-    res.status(500).json({ error: "Error al obtener pedidos" });
-  }
-});
-
-
-// ===============================
-// LOGIN (SIN BCRYPT)
-// ===============================
-app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    const result = await pool.query(
-      "SELECT * FROM usuarios WHERE email = $1",
-      [email.trim()]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Usuario no encontrado" });
-    }
-
-    const user = result.rows[0];
-
-    // Comparación directa (texto plano)
-    if (user.password.trim() !== password.trim()) {
-      return res.status(401).json({ error: "Contraseña incorrecta" });
-    }
-
-    // 🔥 Fallback automático si Railway no tiene la variable
-    const secret = process.env.JWT_SECRET || "fallback_super_secret_123";
-
-    const token = jwt.sign(
-      { id: user.id, rol: user.rol },
-      secret,
-      { expiresIn: "8h" }
-    );
-
-    res.json({
-      token,
-      rol: user.rol,
-      nombre: user.nombre
-    });
-
-  } catch (error) {
-    console.error("ERROR LOGIN:", error);
-    res.status(500).json({ error: "Error en login" });
   }
 });
 
@@ -103,14 +44,14 @@ app.post("/login", async (req, res) => {
 // CREAR PEDIDO (CLIENTE)
 // ===============================
 app.post("/pedidos", async (req, res) => {
-  const { mesa, productos, total } = req.body;
+  const { mesa_id, productos, total } = req.body;
 
   try {
     const result = await pool.query(
-      `INSERT INTO pedidos (mesa, productos, total)
-       VALUES ($1, $2, $3)
+      `INSERT INTO pedidos (mesa_id, productos, total, estado)
+       VALUES ($1, $2, $3, 'pendiente')
        RETURNING *`,
-      [mesa, productos, total]
+      [mesa_id, JSON.stringify(productos), total]
     );
 
     res.json(result.rows[0]);
@@ -121,12 +62,12 @@ app.post("/pedidos", async (req, res) => {
 });
 
 // ===============================
-// LISTAR PEDIDOS
+// LISTAR PEDIDOS PENDIENTES (CHEF)
 // ===============================
 app.get("/pedidos", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM pedidos ORDER BY creado_en DESC"
+      "SELECT * FROM pedidos WHERE estado = 'pendiente' ORDER BY creado_en ASC"
     );
 
     res.json(result.rows);
@@ -156,6 +97,47 @@ app.put("/pedidos/:id", async (req, res) => {
   }
 });
 
+// ===============================
+// LOGIN (SIN BCRYPT)
+// ===============================
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email.trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Usuario no encontrado" });
+    }
+
+    const user = result.rows[0];
+
+    if (user.password.trim() !== password.trim()) {
+      return res.status(401).json({ error: "Contraseña incorrecta" });
+    }
+
+    const secret = process.env.JWT_SECRET || "fallback_super_secret_123";
+
+    const token = jwt.sign(
+      { id: user.id, rol: user.rol },
+      secret,
+      { expiresIn: "8h" }
+    );
+
+    res.json({
+      token,
+      rol: user.rol,
+      nombre: user.nombre
+    });
+
+  } catch (error) {
+    console.error("ERROR LOGIN:", error);
+    res.status(500).json({ error: "Error en login" });
+  }
+});
 
 // ===============================
 // INICIAR SERVIDOR
