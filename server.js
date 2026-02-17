@@ -43,23 +43,38 @@ app.get("/productos", async (req, res) => {
 // ===============================
 // CREAR PEDIDO (CLIENTE)
 // ===============================
-app.post("/pedidos", async (req, res) => {
-  const { mesa_id, productos, total } = req.body;
-
+app.get("/pedidos", async (req, res) => {
   try {
-    const result = await pool.query(
-      `INSERT INTO pedidos (mesa_id, productos, total, estado)
-       VALUES ($1, $2, $3, 'pendiente')
-       RETURNING *`,
-      [mesa_id, JSON.stringify(productos), total]
-    );
+    const result = await pool.query(`
+      SELECT 
+        p.id,
+        p.mesa_id,
+        p.estado,
+        p.total,
+        p.creado_en,
+        json_agg(
+          json_build_object(
+            'producto_id', dp.producto_id,
+            'cantidad', dp.cantidad,
+            'nombre', pr.nombre
+          )
+        ) AS productos
+      FROM pedidos p
+      LEFT JOIN detalle_pedido dp ON dp.pedido_id = p.id
+      LEFT JOIN productos pr ON pr.id = dp.producto_id
+      WHERE p.estado = 'pendiente'
+      GROUP BY p.id
+      ORDER BY p.creado_en ASC
+    `);
 
-    res.json(result.rows[0]);
+    res.json(result.rows);
+
   } catch (error) {
-    console.error("Error creando pedido:", error);
-    res.status(500).json({ error: "Error al crear pedido" });
+    console.error("Error obteniendo pedidos:", error);
+    res.status(500).json({ error: "Error al obtener pedidos" });
   }
 });
+
 
 // ===============================
 // LISTAR PEDIDOS PENDIENTES (CHEF)
