@@ -22,8 +22,9 @@ const pool = new Pool({
 // RUTA TEST
 // ===============================
 app.get("/", (req, res) => {
-  res.send("Servidor funcionando 🚀");
+  res.send("Servidor funcionando VERSION NUEVA 🔥");
 });
+
 
 // ===============================
 // LOGIN (SIN BCRYPT)
