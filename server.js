@@ -24,6 +24,22 @@ const pool = new Pool({
 app.get("/", (req, res) => {
   res.send("Servidor funcionando 🔥 VERSION ACTUALIZADA");
 });
+// ===============================
+// OBTENER PRODUCTOS
+// ===============================
+app.get("/productos", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, nombre, precio FROM productos WHERE activo = true ORDER BY id ASC"
+    );
+
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error("Error obteniendo productos:", error);
+    res.status(500).json({ error: "Error obteniendo productos" });
+  }
+});
 
 // ===============================
 // LOGIN (SIN BCRYPT)
