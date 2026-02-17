@@ -22,9 +22,8 @@ const pool = new Pool({
 // RUTA TEST
 // ===============================
 app.get("/", (req, res) => {
-  res.send("Servidor funcionando VERSION NUEVA 🔥");
+  res.send("Servidor funcionando 🔥 VERSION ACTUALIZADA");
 });
-
 
 // ===============================
 // LOGIN (SIN BCRYPT)
@@ -49,13 +48,12 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Contraseña incorrecta" });
     }
 
-    if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ error: "JWT_SECRET no configurado" });
-    }
+    // 🔥 Fallback automático si Railway no tiene la variable
+    const secret = process.env.JWT_SECRET || "fallback_super_secret_123";
 
     const token = jwt.sign(
       { id: user.id, rol: user.rol },
-      process.env.JWT_SECRET,
+      secret,
       { expiresIn: "8h" }
     );
 
@@ -78,4 +76,5 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log("JWT_SECRET detectado:", process.env.JWT_SECRET ? "SI" : "NO (usando fallback)");
 });
