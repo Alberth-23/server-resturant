@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================
-// CONEXIÓN A POSTGRES (RAILWAY)
+// CONEXIÓN 
 // ===============================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
