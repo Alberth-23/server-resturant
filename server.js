@@ -11,9 +11,7 @@ const app = express();
 // MIDDLEWARES
 // ===============================
 app.use(cors({
-  // En producción puedes poner tu dominio de frontend:
-  // origin: process.env.FRONTEND_URL || "*",
-  origin: "*", // abierto (ajusta si quieres más seguridad)
+  origin: process.env.FRONTEND_ORIGIN || "*", // ajusta a tu dominio de frontend si quieres
 }));
 app.use(express.json());
 
@@ -22,17 +20,50 @@ app.use(express.json());
 // ===============================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Railway normalmente requiere SSL
-  ssl: process.env.DATABASE_URL?.includes("localhost")
-    ? false
-    : { rejectUnauthorized: false },
+  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("localhost")
+    ? { rejectUnauthorized: false }
+    : false,
 });
+
+// ===============================
+// HELPER: OBTENER UN PEDIDO CON DETALLE
+// ===============================
+async function obtenerPedidoConDetalle(idPedido) {
+  const query = `
+    SELECT 
+      p.id,
+      p.mesa_id,
+      p.estado,
+      p.total,
+      p.creado_en,
+      COALESCE(
+        json_agg(
+          json_build_object(
+            'detalle_id', dp.id,
+            'producto_id', dp.producto_id,
+            'cantidad', dp.cantidad,
+            'nombre', pr.nombre,
+            'precio', pr.precio
+          )
+        ) FILTER (WHERE dp.id IS NOT NULL),
+        '[]'
+      ) AS productos
+    FROM pedidos p
+    LEFT JOIN detalle_pedido dp ON dp.pedido_id = p.id
+    LEFT JOIN productos pr ON pr.id = dp.producto_id
+    WHERE p.id = $1
+    GROUP BY p.id;
+  `;
+
+  const { rows } = await pool.query(query, [idPedido]);
+  return rows[0] || null;
+}
 
 // ===============================
 // RUTA TEST
 // ===============================
 app.get("/", (req, res) => {
-  res.send("Servidor funcionando 🔥 VERSION ACTUALIZADA");
+  res.send("Servidor restaurante funcionando 🔥");
 });
 
 // ===============================
@@ -57,7 +88,6 @@ app.post("/pedidos", async (req, res) => {
   const { mesa_id, productos } = req.body;
   // productos: [{ producto_id, cantidad }, ...]
 
-  // Validación básica
   if (!mesa_id || !Array.isArray(productos) || productos.length === 0) {
     return res.status(400).json({
       error: "Datos de pedido inválidos. Se requiere mesa_id y al menos un producto.",
@@ -69,7 +99,7 @@ app.post("/pedidos", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1. Crear el pedido en tabla pedidos
+    // 1. Insertar pedido
     const insertPedidoQuery = `
       INSERT INTO pedidos (mesa_id, estado, total)
       VALUES ($1, 'pendiente', 0)
@@ -77,7 +107,7 @@ app.post("/pedidos", async (req, res) => {
     `;
     const { rows: [pedido] } = await client.query(insertPedidoQuery, [mesa_id]);
 
-    // 2. Insertar detalles en detalle_pedido
+    // 2. Insertar detalles
     const insertDetalleQuery = `
       INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad)
       VALUES ($1, $2, $3);
@@ -95,7 +125,7 @@ app.post("/pedidos", async (req, res) => {
       ]);
     }
 
-    // 3. (Opcional pero recomendable) Calcular total en base a precios de productos
+    // 3. Calcular total
     const totalQuery = `
       SELECT COALESCE(SUM(pr.precio * dp.cantidad), 0) AS total
       FROM detalle_pedido dp
@@ -111,11 +141,9 @@ app.post("/pedidos", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // Puedes devolver el pedido actualizado con total
-    res.status(201).json({
-      ...pedido,
-      total: totalRow.total,
-    });
+    // 4. Devolver el pedido completo con detalle
+    const pedidoCompleto = await obtenerPedidoConDetalle(pedido.id);
+    res.status(201).json(pedidoCompleto || { ...pedido, total: totalRow.total });
 
   } catch (error) {
     await client.query("ROLLBACK");
@@ -127,7 +155,7 @@ app.post("/pedidos", async (req, res) => {
 });
 
 // ===============================
-// LISTAR PEDIDOS PENDIENTES (CHEF) - GET /pedidos
+// LISTAR PEDIDOS PENDIENTES (ADMIN / CHEF) - GET /pedidos
 // ===============================
 app.get("/pedidos", async (req, res) => {
   try {
@@ -168,13 +196,30 @@ app.get("/pedidos", async (req, res) => {
 });
 
 // ===============================
+// OBTENER UN PEDIDO POR ID (CON DETALLE) - GET /pedidos/:id
+// ===============================
+app.get("/pedidos/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const pedido = await obtenerPedidoConDetalle(id);
+    if (!pedido) {
+      return res.status(404).json({ error: "Pedido no encontrado" });
+    }
+    res.json(pedido);
+  } catch (error) {
+    console.error("Error obteniendo pedido por id:", error);
+    res.status(500).json({ error: "Error al obtener pedido" });
+  }
+});
+
+// ===============================
 // ACTUALIZAR ESTADO PEDIDO - PUT /pedidos/:id
 // ===============================
 app.put("/pedidos/:id", async (req, res) => {
   const { estado } = req.body;
   const { id } = req.params;
 
-  // Opcional: validar estado contra los permitidos
   const estadosValidos = ["pendiente", "en_preparacion", "listo", "cerrado"];
   if (!estadosValidos.includes(estado)) {
     return res.status(400).json({ error: "Estado de pedido inválido" });
@@ -182,7 +227,7 @@ app.put("/pedidos/:id", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "UPDATE pedidos SET estado = $1 WHERE id = $2 RETURNING *",
+      "UPDATE pedidos SET estado = $1 WHERE id = $2 RETURNING id",
       [estado, id]
     );
 
@@ -190,7 +235,8 @@ app.put("/pedidos/:id", async (req, res) => {
       return res.status(404).json({ error: "Pedido no encontrado" });
     }
 
-    res.json(result.rows[0]);
+    const pedido = await obtenerPedidoConDetalle(id);
+    res.json(pedido);
   } catch (error) {
     console.error("Error actualizando pedido:", error);
     res.status(500).json({ error: "Error actualizando pedido" });
@@ -240,7 +286,7 @@ app.post("/login", async (req, res) => {
 });
 
 // ===============================
-// MIDDLEWARE DE ERROR GENÉRICO (OPCIONAL)
+// MIDDLEWARE DE ERROR GENÉRICO
 // ===============================
 app.use((err, req, res, next) => {
   console.error("Error no controlado:", err);
