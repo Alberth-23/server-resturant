@@ -10,9 +10,11 @@ const app = express();
 // ===============================
 // MIDDLEWARES
 // ===============================
-app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || "*",
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_ORIGIN || "*", // ajústalo a tu dominio de frontend si quieres
+  })
+);
 app.use(express.json());
 
 // ===============================
@@ -20,9 +22,11 @@ app.use(express.json());
 // ===============================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("localhost")
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl:
+    process.env.DATABASE_URL &&
+    !process.env.DATABASE_URL.includes("localhost")
+      ? { rejectUnauthorized: false }
+      : false,
 });
 
 // ===============================
@@ -87,8 +91,9 @@ app.get("/productos", async (req, res) => {
 // ===============================
 app.post("/pedidos", async (req, res) => {
   const { mesa_id, productos } = req.body;
-  // productos: [{ producto_id, cantidad }, ...]
+  console.log("Body recibido en POST /pedidos:", req.body);
 
+  // Validación básica
   if (!mesa_id || !Array.isArray(productos) || productos.length === 0) {
     return res.status(400).json({
       error: "Datos de pedido inválidos. Se requiere mesa_id y al menos un producto.",
@@ -107,6 +112,7 @@ app.post("/pedidos", async (req, res) => {
       RETURNING *;
     `;
     const { rows: [pedido] } = await client.query(insertPedidoQuery, [mesa_id]);
+    console.log("Pedido creado:", pedido);
 
     // 2. Insertar detalles con precio_unitario y subtotal
     const insertDetalleQuery = `
@@ -132,7 +138,7 @@ app.post("/pedidos", async (req, res) => {
         item.cantidad,
       ]);
 
-      // si no hay fila insertada, es que el producto no existe
+      // Si no se insertó ninguna fila, el producto no existe
       if (resultDetalle.rowCount === 0) {
         throw new Error(`Producto no encontrado: ${item.producto_id}`);
       }
@@ -153,14 +159,23 @@ app.post("/pedidos", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // 4. Devolver el pedido completo con detalle
+    // 4. Devolver el pedido completo con su detalle
     const pedidoCompleto = await obtenerPedidoConDetalle(pedido.id);
-    res.status(201).json(pedidoCompleto || { ...pedido, total: totalRow.total });
-
+    res.status(201).json(
+      pedidoCompleto || {
+        ...pedido,
+        total: totalRow.total,
+      }
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error creando pedido:", error);
-    res.status(500).json({ error: "Error creando pedido" });
+
+    // Devolver el detalle del error para depurar desde el frontend
+    res.status(500).json({
+      error: "Error creando pedido",
+      detalle: error.message,
+    });
   } finally {
     client.release();
   }
@@ -201,7 +216,6 @@ app.get("/pedidos", async (req, res) => {
 
     const { rows } = await pool.query(query);
     res.json(rows);
-
   } catch (error) {
     console.error("Error obteniendo pedidos:", error);
     res.status(500).json({ error: "Error al obtener pedidos" });
@@ -280,18 +294,15 @@ app.post("/login", async (req, res) => {
 
     const secret = process.env.JWT_SECRET || "fallback_super_secret_123";
 
-    const token = jwt.sign(
-      { id: user.id, rol: user.rol },
-      secret,
-      { expiresIn: "8h" }
-    );
+    const token = jwt.sign({ id: user.id, rol: user.rol }, secret, {
+      expiresIn: "8h",
+    });
 
     res.json({
       token,
       rol: user.rol,
       nombre: user.nombre,
     });
-
   } catch (error) {
     console.error("ERROR LOGIN:", error);
     res.status(500).json({ error: "Error en login" });
@@ -313,5 +324,8 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
-  console.log("JWT_SECRET detectado:", process.env.JWT_SECRET ? "SI" : "NO (usando fallback)");
+  console.log(
+    "JWT_SECRET detectado:",
+    process.env.JWT_SECRET ? "SI" : "NO (usando fallback)"
+  );
 });
