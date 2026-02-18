@@ -93,7 +93,6 @@ app.post("/pedidos", async (req, res) => {
   const { mesa_id, productos } = req.body;
   console.log("Body recibido en POST /pedidos:", req.body);
 
-  // Validación básica
   if (!mesa_id || !Array.isArray(productos) || productos.length === 0) {
     return res.status(400).json({
       error: "Datos de pedido inválidos. Se requiere mesa_id y al menos un producto.",
@@ -105,7 +104,6 @@ app.post("/pedidos", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1. Insertar pedido
     const insertPedidoQuery = `
       INSERT INTO pedidos (mesa_id, estado, total)
       VALUES ($1, 'pendiente', 0)
@@ -114,15 +112,14 @@ app.post("/pedidos", async (req, res) => {
     const { rows: [pedido] } = await client.query(insertPedidoQuery, [mesa_id]);
     console.log("Pedido creado:", pedido);
 
-    // 2. Insertar detalles con precio_unitario y subtotal
     const insertDetalleQuery = `
       INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad, precio_unitario, subtotal)
       SELECT
         $1 AS pedido_id,
         p.id AS producto_id,
-        $3 AS cantidad,
+        $3::integer AS cantidad,
         p.precio AS precio_unitario,
-        p.precio * $3 AS subtotal
+        p.precio * $3::integer AS subtotal
       FROM productos p
       WHERE p.id = $2;
     `;
@@ -138,13 +135,11 @@ app.post("/pedidos", async (req, res) => {
         item.cantidad,
       ]);
 
-      // Si no se insertó ninguna fila, el producto no existe
       if (resultDetalle.rowCount === 0) {
         throw new Error(`Producto no encontrado: ${item.producto_id}`);
       }
     }
 
-    // 3. Calcular total a partir de los subtotales de detalle_pedido
     const totalQuery = `
       SELECT COALESCE(SUM(subtotal), 0) AS total
       FROM detalle_pedido
@@ -159,7 +154,6 @@ app.post("/pedidos", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // 4. Devolver el pedido completo con su detalle
     const pedidoCompleto = await obtenerPedidoConDetalle(pedido.id);
     res.status(201).json(
       pedidoCompleto || {
@@ -171,7 +165,6 @@ app.post("/pedidos", async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Error creando pedido:", error);
 
-    // Devolver el detalle del error para depurar desde el frontend
     res.status(500).json({
       error: "Error creando pedido",
       detalle: error.message,
