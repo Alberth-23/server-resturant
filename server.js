@@ -11,7 +11,7 @@ const app = express();
 // MIDDLEWARES
 // ===============================
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || "*", // ajusta a tu dominio de frontend si quieres
+  origin: process.env.FRONTEND_ORIGIN || "*",
 }));
 app.use(express.json());
 
@@ -43,7 +43,8 @@ async function obtenerPedidoConDetalle(idPedido) {
             'producto_id', dp.producto_id,
             'cantidad', dp.cantidad,
             'nombre', pr.nombre,
-            'precio', pr.precio
+            'precio', dp.precio_unitario,
+            'subtotal', dp.subtotal
           )
         ) FILTER (WHERE dp.id IS NOT NULL),
         '[]'
@@ -107,10 +108,17 @@ app.post("/pedidos", async (req, res) => {
     `;
     const { rows: [pedido] } = await client.query(insertPedidoQuery, [mesa_id]);
 
-    // 2. Insertar detalles
+    // 2. Insertar detalles con precio_unitario y subtotal
     const insertDetalleQuery = `
-      INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad)
-      VALUES ($1, $2, $3);
+      INSERT INTO detalle_pedido (pedido_id, producto_id, cantidad, precio_unitario, subtotal)
+      SELECT
+        $1 AS pedido_id,
+        p.id AS producto_id,
+        $3 AS cantidad,
+        p.precio AS precio_unitario,
+        p.precio * $3 AS subtotal
+      FROM productos p
+      WHERE p.id = $2;
     `;
 
     for (const item of productos) {
@@ -118,19 +126,23 @@ app.post("/pedidos", async (req, res) => {
         throw new Error("Producto inválido en el pedido");
       }
 
-      await client.query(insertDetalleQuery, [
+      const resultDetalle = await client.query(insertDetalleQuery, [
         pedido.id,
         item.producto_id,
         item.cantidad,
       ]);
+
+      // si no hay fila insertada, es que el producto no existe
+      if (resultDetalle.rowCount === 0) {
+        throw new Error(`Producto no encontrado: ${item.producto_id}`);
+      }
     }
 
-    // 3. Calcular total
+    // 3. Calcular total a partir de los subtotales de detalle_pedido
     const totalQuery = `
-      SELECT COALESCE(SUM(pr.precio * dp.cantidad), 0) AS total
-      FROM detalle_pedido dp
-      JOIN productos pr ON pr.id = dp.producto_id
-      WHERE dp.pedido_id = $1;
+      SELECT COALESCE(SUM(subtotal), 0) AS total
+      FROM detalle_pedido
+      WHERE pedido_id = $1;
     `;
     const { rows: [totalRow] } = await client.query(totalQuery, [pedido.id]);
 
@@ -173,7 +185,8 @@ app.get("/pedidos", async (req, res) => {
               'producto_id', dp.producto_id,
               'cantidad', dp.cantidad,
               'nombre', pr.nombre,
-              'precio', pr.precio
+              'precio', dp.precio_unitario,
+              'subtotal', dp.subtotal
             )
           ) FILTER (WHERE dp.id IS NOT NULL),
           '[]'
