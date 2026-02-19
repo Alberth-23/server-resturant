@@ -311,6 +311,42 @@ app.use((err, req, res, next) => {
 });
 
 // ===============================
+// LLAMAR MESERA (EN MEMORIA)
+// ===============================
+let llamadasMesera = [];
+
+// Cliente: registrar llamada de mesera
+app.post("/llamar-mesera", (req, res) => {
+  const { mesa_id } = req.body;
+
+  if (!mesa_id) {
+    return res.status(400).json({ error: "mesa_id es requerido" });
+  }
+
+  const llamada = {
+    id: Date.now(), // id simple basado en tiempo
+    mesa_id,
+    creado_en: new Date().toISOString(),
+  };
+
+  llamadasMesera.push(llamada);
+  console.log("Nueva llamada de meser@", llamada);
+
+  res.status(201).json(llamada);
+});
+
+// Admin: obtener todas las llamadas pendientes
+app.get("/llamar-mesera", (req, res) => {
+  res.json(llamadasMesera);
+});
+
+// Admin: marcar todas las llamadas como atendidas
+app.post("/llamar-mesera/atender-todas", (req, res) => {
+  llamadasMesera = [];
+  res.json({ ok: true });
+});
+
+// ===============================
 // INICIAR SERVIDOR
 // ===============================
 const PORT = process.env.PORT || 3000;
