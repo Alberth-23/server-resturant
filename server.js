@@ -347,6 +347,42 @@ app.post("/llamar-mesera/atender-todas", (req, res) => {
 });
 
 // ===============================
+// HISTORIAL DE PEDIDOS - GET /pedidos/historial
+// ===============================
+app.get("/pedidos/historial", async (req, res) => {
+  const { estado } = req.query; // opcional: ?estado=pendiente|en_preparacion|listo|cerrado|todos
+
+  try {
+    let where = "";
+    const params = [];
+
+    if (estado && estado !== "todos") {
+      where = "WHERE p.estado = $1";
+      params.push(estado);
+    }
+
+    const query = `
+      SELECT 
+        p.id,
+        p.mesa_id,
+        p.estado,
+        p.total,
+        p.creado_en
+      FROM pedidos p
+      ${where}
+      ORDER BY p.creado_en DESC
+      LIMIT 200;
+    `;
+
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error obteniendo historial de pedidos:", error);
+    res.status(500).json({ error: "Error al obtener historial de pedidos" });
+  }
+});
+
+// ===============================
 // INICIAR SERVIDOR
 // ===============================
 const PORT = process.env.PORT || 3000;
